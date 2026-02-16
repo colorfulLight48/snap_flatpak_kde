@@ -1,45 +1,41 @@
----
-# yaml-language-server: $schema=https://schema.blue-build.org/recipe-v1.json
-# image will be published to ghcr.io/<user>/<name>
-name: template
-# description will be included in the image's metadata
-description: This is my personal OS image.
+# recipes/recipe.yml
+name: my-custom-kde-linux
+description: An immutable KDE Plasma distro with Snap and Flatpak support.
 
-# the base image to build on top of (FROM) and the version tag to use
-base-image: ghcr.io/ublue-os/silverblue-main
-image-version: 42 # latest is also supported if you want new updates ASAP
+# Base image provides the immutable KDE Plasma environment
+base-image: ghcr.io/ublue-os/kinoite-main
+image-version: latest
 
-# module configuration, executed in order
-# you can include multiple instances of the same module
 modules:
-  - type: files
-    files:
-      - source: system
-        destination: / # copies files/system/* (* means everything inside it) into your image's root folder /
-
-  - type: dnf
-    repos:
-      copr:
-        - atim/starship
+  # 1. Install Snapd and system tools via rpm-ostree
+  - type: rpm-ostree
     install:
-      packages:
-        - micro
-        - starship
-    remove:
-      packages:
-        # example: removing firefox (in favor of the flatpak)
-        # "firefox" is the main package, "firefox-langpacks" is a dependency
-        - firefox
-        - firefox-langpacks # also remove firefox dependency (not required for all packages, this is a special case)
+      - snapd
+      - rsync # Useful for maintenance
 
+  # 2. Enable Snap services to start automatically
+  - type: systemd
+    units:
+      - snapd.socket
+
+  # 3. Create the /snap symlink at boot using systemd-tmpfiles
+  # This is required for "classic" snaps like LXD or VS Code.
+  - type: script
+    scripts:
+      - |
+        mkdir -p /usr/lib/tmpfiles.d
+        echo "L+ /snap - - - - /var/lib/snapd/snap" > /usr/lib/tmpfiles.d/snap.conf
+
+  # 4. Pre-install essential Flatpaks
+  - type: flatpaks
+    install:
+      - org.kde.dolphin
+      - com.discordapp.Discord
+      - org.mozilla.firefox
+
+  # 5. Enable Flathub by default
   - type: default-flatpaks
-    configurations:
-      - notify: true # Send notification after install/uninstall is finished (true/false)
-        scope: system
-        # If no repo information is specified, Flathub will be used by default
-        install: # system flatpaks we want all users to have and not remove
-          - org.mozilla.firefox
-          - org.gnome.Loupe
-      - scope: user # Also add Flathub user repo, but no user packages
-
-  - type: signing # this sets up the proper policy & signing files for signed images to work fully
+    notify: true
+    repo-url: https://dl.flathub.org/repo/flathub.flatpakrepo
+    repo-name: flathub
+    repo-title: "Flathub (Official)"
